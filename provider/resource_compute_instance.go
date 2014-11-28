@@ -16,8 +16,7 @@ func resourceComputeInstance() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceComputeInstanceCreate,
 		Read:   resourceComputeInstanceRead,
-		// Update: resourceComputeInstanceUpdate,
-		Update: nil,
+		Update: resourceComputeInstanceUpdate,
 		Delete: resourceComputeInstanceDelete,
 
 		Schema: map[string]*schema.Schema{
@@ -200,6 +199,46 @@ func resourceComputeInstanceRead(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
+	config := meta.(*Config)
+
+	d.Partial(true)
+
+	if d.HasChange("name") {
+		if err := config.sdc_client.RenameMachine(d.Id(), d.Get("name").(string)); err != nil {
+			return fmt.Errorf("Error renaming machine: %s", err)
+		}
+
+		d.SetPartial("name")
+	}
+
+	if d.HasChange("metadata") {
+		metadata := computeInstanceMetadata(d)
+		if _, err := config.sdc_client.UpdateMachineMetadata(d.Id(), metadata); err != nil {
+			return fmt.Errorf("Error updating machine metadata: %s", err)
+		}
+
+		d.SetPartial("metadata")
+	}
+
+	if d.HasChange("tags") {
+		tags := computeInstanceTags(d)
+		if _, err := config.sdc_client.ReplaceMachineTags(d.Id(), tags); err != nil {
+			return fmt.Errorf("Error updating machine tags: %s", err)
+		}
+
+		d.SetPartial("tags")
+	}
+
+	if d.HasChange("package") {
+		if err := config.sdc_client.ResizeMachine(d.Id(), d.Get("package").(string)); err != nil {
+			return fmt.Errorf("Error resizing machine: %s", err)
+		}
+
+		d.SetPartial("package")
+	}
+
+	d.Partial(false)
+
 	return resourceComputeInstanceRead(d, meta)
 }
 
@@ -294,6 +333,14 @@ func computeInstanceUpdateMeta(d *schema.ResourceData, machine *cloudapi.Machine
 			"type": "ssh",
 			"host": machine.PrimaryIP,
 		})
+	}
+
+	if machine.Tags != nil {
+		d.Set("tags", machine.Tags)
+	}
+
+	if machine.Metadata != nil {
+		d.Set("metadata", machine.Metadata)
 	}
 }
 

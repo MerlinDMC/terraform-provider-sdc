@@ -30,6 +30,34 @@ func TestAccInstance_basic(t *testing.T) {
 	})
 }
 
+func TestAccInstance_update(t *testing.T) {
+	var instance cloudapi.Machine
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckInstanceDestroy,
+		Steps: []resource.TestStep{
+			resource.TestStep{
+				Config: testAccInstance_basic,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckInstanceExists(
+						"sdc_instance.foobar", &instance),
+				),
+			},
+			resource.TestStep{
+				Config: testAccInstance_update,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckInstanceExists(
+						"sdc_instance.foobar", &instance),
+					testAccCheckInstanceTag(&instance, "bar"),
+					testAccCheckInstanceName(&instance, "foobar"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckInstanceExists(n string, instance *cloudapi.Machine) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
@@ -91,10 +119,24 @@ func testAccCheckInstanceTag(instance *cloudapi.Machine, n string) resource.Test
 	}
 }
 
+func testAccCheckInstanceName(instance *cloudapi.Machine, n string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		if instance.Name == "" {
+			return fmt.Errorf("no name")
+		}
+
+		if instance.Name == n {
+			return nil
+		}
+
+		return fmt.Errorf("instance has wrong name: %s", instance.Name)
+	}
+}
+
 const testAccInstance_basic = `
 resource "sdc_instance" "foobar" {
   image = "d34c301e-10c3-11e4-9b79-5f67ca448df0"
-  package = "g3-standard-0.25-smartos"
+  package = "g3-standard-1.75-smartos"
 
   network {
     source = "1e7bb0e1-25a9-43b6-bb19-f79ae9540b39"
@@ -103,5 +145,23 @@ resource "sdc_instance" "foobar" {
 
   tags {
     foo = "bar"
+  }
+}`
+
+const testAccInstance_update = `
+resource "sdc_instance" "foobar" {
+	name = "foobar"
+
+  image = "d34c301e-10c3-11e4-9b79-5f67ca448df0"
+  package = "g3-highcpu-1.75-smartos"
+
+  network {
+    source = "1e7bb0e1-25a9-43b6-bb19-f79ae9540b39"
+    name = "SDC Public"
+  }
+
+  tags {
+    foo = "bar"
+    bar = "baz"
   }
 }`
