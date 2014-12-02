@@ -43,6 +43,7 @@ func TestAccInstance_update(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckInstanceExists(
 						"sdc_instance.foobar", &instance),
+					testAccCheckInstancePackage(&instance, "g3-standard-1.75-smartos"),
 				),
 			},
 			resource.TestStep{
@@ -50,6 +51,7 @@ func TestAccInstance_update(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckInstanceExists(
 						"sdc_instance.foobar", &instance),
+					testAccCheckInstancePackage(&instance, "g3-highcpu-1.75-smartos"),
 					testAccCheckInstanceTag(&instance, "bar"),
 					testAccCheckInstanceName(&instance, "foobar"),
 				),
@@ -130,6 +132,20 @@ func testAccCheckInstanceName(instance *cloudapi.Machine, n string) resource.Tes
 		}
 
 		return fmt.Errorf("instance has wrong name: %s", instance.Name)
+	}
+}
+
+func testAccCheckInstancePackage(instance *cloudapi.Machine, n string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		if instance.Package == "" {
+			return fmt.Errorf("no package")
+		}
+
+		if instance.Package == n {
+			return nil
+		}
+
+		return fmt.Errorf("instance has wrong package: %s", instance.Package)
 	}
 }
 

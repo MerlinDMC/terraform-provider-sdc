@@ -127,7 +127,7 @@ func resourceComputeInstanceCreate(d *schema.ResourceData, meta interface{}) err
 		Image:    d.Get("image").(string),
 		Package:  d.Get("package").(string),
 		Metadata: computeInstanceMetadata(d),
-		Tags:     computeInstanceTags(d),
+		Tags:     computeInstanceTags(d, "tag."),
 	}
 
 	// Add configured networks
@@ -217,13 +217,21 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 			return fmt.Errorf("Error updating machine metadata: %s", err)
 		}
 
+		if err := resource.Retry(10*time.Minute, computeInstanceUpdateRefreshFunc(config.sdc_client, d)); err != nil {
+			return fmt.Errorf("Error waiting for metadata update: %s", err)
+		}
+
 		d.SetPartial("metadata")
 	}
 
 	if d.HasChange("tags") {
-		tags := computeInstanceTags(d)
+		tags := computeInstanceTags(d, "")
 		if _, err := config.sdc_client.ReplaceMachineTags(d.Id(), tags); err != nil {
 			return fmt.Errorf("Error updating machine tags: %s", err)
+		}
+
+		if err := resource.Retry(10*time.Minute, computeInstanceUpdateRefreshFunc(config.sdc_client, d)); err != nil {
+			return fmt.Errorf("Error waiting for tags update: %s", err)
 		}
 
 		d.SetPartial("tags")
@@ -232,6 +240,10 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 	if d.HasChange("package") {
 		if err := config.sdc_client.ResizeMachine(d.Id(), d.Get("package").(string)); err != nil {
 			return fmt.Errorf("Error resizing machine: %s", err)
+		}
+
+		if err := resource.Retry(10*time.Minute, computeInstancePackageRefreshFunc(config.sdc_client, d, d.Get("package").(string))); err != nil {
+			return fmt.Errorf("Error waiting for machine resize: %s", err)
 		}
 
 		d.SetPartial("package")
@@ -271,7 +283,7 @@ func resourceComputeInstanceDelete(d *schema.ResourceData, meta interface{}) err
 	return nil
 }
 
-func computeInstanceTags(d *schema.ResourceData) map[string]string {
+func computeInstanceTags(d *schema.ResourceData, prefix string) map[string]string {
 	var tags map[string]string
 
 	if v := d.Get("tags").([]interface{}); len(v) > 0 {
@@ -279,10 +291,10 @@ func computeInstanceTags(d *schema.ResourceData) map[string]string {
 
 		for _, v := range v {
 			for k, v := range v.(map[string]interface{}) {
-				if strings.HasPrefix(k, "tag.") {
+				if strings.HasPrefix(k, prefix) {
 					tags[k] = v.(string)
 				} else {
-					tags["tag."+k] = v.(string)
+					tags[prefix+k] = v.(string)
 				}
 			}
 		}
@@ -352,6 +364,42 @@ func computeInstanceStateRefreshFunc(client *cloudapi.Client, machineId string) 
 		}
 
 		return machine, machine.State, nil
+	}
+}
+
+func computeInstanceUpdateRefreshFunc(client *cloudapi.Client, d *schema.ResourceData) resource.RetryFunc {
+	current := d.Get("updated").(string)
+
+	return func() error {
+		machine, err := client.GetMachine(d.Id())
+		if err != nil {
+			return resource.RetryError{Err: err}
+		}
+
+		if machine.Updated == current {
+			return fmt.Errorf(machine.Updated)
+		}
+
+		computeInstanceUpdateMeta(d, machine)
+
+		return nil
+	}
+}
+
+func computeInstancePackageRefreshFunc(client *cloudapi.Client, d *schema.ResourceData, expected string) resource.RetryFunc {
+	return func() error {
+		machine, err := client.GetMachine(d.Id())
+		if err != nil {
+			return resource.RetryError{Err: err}
+		}
+
+		if machine.Package != expected {
+			return fmt.Errorf(machine.Updated)
+		}
+
+		computeInstanceUpdateMeta(d, machine)
+
+		return nil
 	}
 }
 
